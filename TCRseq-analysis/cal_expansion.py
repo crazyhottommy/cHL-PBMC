@@ -1,16 +1,18 @@
+#! /bin/env python
+
 import os
 import argparse
 import gzip
-import cPickle as pickle
+#import cPickle as pickle
 
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import seaborn as sns
+#import matplotlib.pyplot as plt
+#from matplotlib.backends.backend_pdf import PdfPages
+#import seaborn as sns
 import pandas as pd
-from scipy.optimize import bisect
+#from scipy.optimize import bisect
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--datapath', type=str, default='../tcrseq-analysis/', help='Data path')
@@ -119,8 +121,8 @@ def get_top_avg(a, top=1):
 
 def clonal_expansion(meta_file,
                      data_path='../data/DanaFarberShipp2018May_clean/', 
-                     out_clone='../work/_expanded_clones.csv.gz',
-                     out_table='../work/_expanded_summary.csv'):
+                     out_clone='../work/_expanded_clones.csv.gz'):
+                     #out_table='../work/_expanded_summary.csv'):
     ## read meta data
     meta = pd.read_csv(meta_file, index_col=0)
     meta.rename(columns={'Zumla patient no':'ZID'}, inplace=True)
@@ -147,24 +149,24 @@ def clonal_expansion(meta_file,
     for pid in patients:
         m = meta.loc[[pid]].values[0].tolist()
         files = patients[pid]
-        if len(files) == 3:
-            post1, post2, pre = sorted(files)
+        if len(files) == 2:
+            post2, pre = sorted(files)
         else:
             continue
-        print pre, post1, post2
+        print (pre, post2)
         assert 'Pre' in pre
         pr, tr = clone_count(data_path+pre)
-        p1, t1 = clone_count(data_path+post1)
+        #p1, t1 = clone_count(data_path+post1)
         p2, t2 = clone_count(data_path+post2)
         pr_set = set(pr.keys())
-        p1_set = set(p1.keys())
+        #p1_set = set(p1.keys())
         p2_set = set(p2.keys())
-        pool = pr_set | p1_set | p2_set
+        pool = pr_set | p2_set
 
         ## check all clones
         all_fold = []
-        nai_fold1, nai_fold2 = [], []
-        mem_fold1, mem_fold2 = [], []
+        nai_fold2 = []
+        mem_fold2 = []
         expand_naive = set()
         expand_memory = set()
         for vdj in pool:
@@ -174,118 +176,118 @@ def clonal_expansion(meta_file,
             else:
                 base = pr[vdj] / float(tr)
             ## maximum fold change
-            fold1 = p1.get(vdj,0)/float(t1)/base
+            #fold1 = p1.get(vdj,0)/float(t1)/base
             fold2 = p2.get(vdj,0)/float(t2)/base
-            fold = max(fold1, fold2)
+            fold = fold2
 
             all_fold.append(fold)
 
             if fold >= 2: ## use 2 for clear definition
                 if vdj not in pr or pr[vdj] <= 1: ## one or less
-                    nai_fold1.append(fold1)
+                    #nai_fold1.append(fold1)
                     nai_fold2.append(fold2)
                     expand_naive.add(vdj)
-                    save_clones.write('%s,%s,%s,'%vdj+'%s,Naive,%s,%s\n'%(pid, base, fold))
+                    save_clones.write('%s,%s,%s,'%vdj+'%s,Single,%s,%s\n'%(pid, base, fold))
                 else:
-                    mem_fold1.append(fold1)
+                    #mem_fold1.append(fold1)
                     mem_fold2.append(fold2)
                     expand_memory.add(vdj)
-                    save_clones.write('%s,%s,%s,'%vdj+'%s,Memory,%s,%s\n'%(pid, base, fold))
+                    save_clones.write('%s,%s,%s,'%vdj+'%s,Nonsingle,%s,%s\n'%(pid, base, fold))
         collect_fold += all_fold
 
-        ## I: Time, F: file, P: clone counts, PS: clones, T: total counts
-        for I, F, P, PS, T in [('Pre',   pre,   pr, pr_set, tr), 
-                               ('Post1', post1, p1, p1_set, t1), 
-                               ('Post2', post2, p2, p2_set, t2)]:
-            if I == 'Pre': ## change from Post1 to Post2
-                jac = jaccard(p1, p2)
-                div = JS_divergence(p1, p2)
-            else: ## Pre to Post1 or Post2
-                jac = jaccard(pr, P)
-                div = JS_divergence(pr, P)
-            summary.append(m+[
-                    I, F, T,
-                    entropy(P),
-                    clonality(P),
-                    np.mean(all_fold),
-                    jac,
-                    div,
-                    len(expand_naive),
-                    len(expand_memory),
-                    len(expand_naive & PS) / float(len(PS)),
-                    sum([P[i] for i in P if i in expand_naive]) / T,
-                    len(expand_memory & PS) / float(len(PS)),
-                    sum([P[i] for i in P if i in expand_memory]) / T,
-                    np.mean([max(i,j) for i,j in zip(nai_fold1, nai_fold2)]),
-                    np.mean([max(i,j) for i,j in zip(mem_fold1, mem_fold2)]),
-                    np.max(nai_fold1),
-                    np.max(nai_fold2),
-                    np.max(mem_fold1),
-                    np.max(mem_fold2),
-                    get_top_avg(nai_fold1, 1),
-                    get_top_avg(nai_fold2, 1),
-                    get_top_avg(mem_fold1, 1),
-                    get_top_avg(mem_fold2, 1),
-                    get_top_avg(nai_fold1, 2),
-                    get_top_avg(nai_fold2, 2),
-                    get_top_avg(mem_fold1, 2),
-                    get_top_avg(mem_fold2, 2),
-                    get_top_avg(nai_fold1, 0.1),
-                    get_top_avg(nai_fold2, 0.1),
-                    get_top_avg(mem_fold1, 0.1),
-                    get_top_avg(mem_fold2, 0.1),
-                    get_top_avg(nai_fold1, 0.01),
-                    get_top_avg(nai_fold2, 0.01),
-                    get_top_avg(mem_fold1, 0.01),
-                    get_top_avg(mem_fold2, 0.01)
-                ])
+    #     ## I: Time, F: file, P: clone counts, PS: clones, T: total counts
+    #     for I, F, P, PS, T in [('Pre',   pre,   pr, pr_set, tr), 
+    #                            #('Post1', post1, p1, p1_set, t1), 
+    #                            ('Post2', post2, p2, p2_set, t2)]:
+    #         if I == 'Pre': ## change from Post1 to Post2
+    #             jac = jaccard(p1, p2)
+    #             div = JS_divergence(p1, p2)
+    #         else: ## Pre to Post1 or Post2
+    #             jac = jaccard(pr, P)
+    #             div = JS_divergence(pr, P)
+    #         summary.append(m+[
+    #                 I, F, T,
+    #                 entropy(P),
+    #                 clonality(P),
+    #                 np.mean(all_fold),
+    #                 jac,
+    #                 div,
+    #                 len(expand_naive),
+    #                 len(expand_memory),
+    #                 len(expand_naive & PS) / float(len(PS)),
+    #                 sum([P[i] for i in P if i in expand_naive]) / T,
+    #                 len(expand_memory & PS) / float(len(PS)),
+    #                 sum([P[i] for i in P if i in expand_memory]) / T,
+    #                 np.mean([max(i,j) for i,j in zip(nai_fold1, nai_fold2)]),
+    #                 np.mean([max(i,j) for i,j in zip(mem_fold1, mem_fold2)]),
+    #                 np.max(nai_fold1),
+    #                 np.max(nai_fold2),
+    #                 np.max(mem_fold1),
+    #                 np.max(mem_fold2),
+    #                 get_top_avg(nai_fold1, 1),
+    #                 get_top_avg(nai_fold2, 1),
+    #                 get_top_avg(mem_fold1, 1),
+    #                 get_top_avg(mem_fold2, 1),
+    #                 get_top_avg(nai_fold1, 2),
+    #                 get_top_avg(nai_fold2, 2),
+    #                 get_top_avg(mem_fold1, 2),
+    #                 get_top_avg(mem_fold2, 2),
+    #                 get_top_avg(nai_fold1, 0.1),
+    #                 get_top_avg(nai_fold2, 0.1),
+    #                 get_top_avg(mem_fold1, 0.1),
+    #                 get_top_avg(mem_fold2, 0.1),
+    #                 get_top_avg(nai_fold1, 0.01),
+    #                 get_top_avg(nai_fold2, 0.01),
+    #                 get_top_avg(mem_fold1, 0.01),
+    #                 get_top_avg(mem_fold2, 0.01)
+    #             ])
 
-    save_clones.close()
-    np.savetxt(out_clone+'.all_fold.gz', np.array(collect_fold))
+    # save_clones.close()
+    # np.savetxt(out_clone+'.all_fold.gz', np.array(collect_fold))
 
-    ## save summary
-    summary = pd.DataFrame(summary, columns=list(meta) + [
-                    'Time', 'File', 'Total.Clones',
-                    'Entropy',
-                    'Clonality',
-                    'Mean.Fold.Change',
-                    'Jaccard.Index',
-                    'JS.Divergence',
-                    'Expand.Naive', 
-                    'Expand.Memory',
-                    'Expanded.Naive.Clonotype.Ratio',
-                    'Expanded.Naive.Clone.Ratio',
-                    'Expanded.Memory.Clonotype.Ratio',
-                    'Expanded.Memory.Clone.Ratio',
-                    'Expanded.Naive.Fold.Mean',
-                    'Expanded.Memory.Fold.Mean',
-                    'Expanded.Naive.Fold1.Max',
-                    'Expanded.Naive.Fold2.Max',
-                    'Expanded.Memory.Fold1.Max',
-                    'Expanded.Memory.Fold2.Max',
-                    'Expanded.Naive.Fold1.Top1',
-                    'Expanded.Naive.Fold2.Top1',
-                    'Expanded.Memory.Fold1.Top1',
-                    'Expanded.Memory.Fold2.Top1',
-                    'Expanded.Naive.Fold1.Top2',
-                    'Expanded.Naive.Fold2.Top2',
-                    'Expanded.Memory.Fold1.Top2',
-                    'Expanded.Memory.Fold2.Top2',
-                    'Expanded.Naive.Fold1.Top01',
-                    'Expanded.Naive.Fold2.Top01',
-                    'Expanded.Memory.Fold1.Top01',
-                    'Expanded.Memory.Fold2.Top01',
-                    'Expanded.Naive.Fold1.Top001',
-                    'Expanded.Naive.Fold2.Top001',
-                    'Expanded.Memory.Fold1.Top001',
-                    'Expanded.Memory.Fold2.Top001'
-                ])
-    summary.to_csv(out_table)
+    # ## save summary
+    # summary = pd.DataFrame(summary, columns=list(meta) + [
+    #                 'Time', 'File', 'Total.Clones',
+    #                 'Entropy',
+    #                 'Clonality',
+    #                 'Mean.Fold.Change',
+    #                 'Jaccard.Index',
+    #                 'JS.Divergence',
+    #                 'Expand.Naive', 
+    #                 'Expand.Memory',
+    #                 'Expanded.Naive.Clonotype.Ratio',
+    #                 'Expanded.Naive.Clone.Ratio',
+    #                 'Expanded.Memory.Clonotype.Ratio',
+    #                 'Expanded.Memory.Clone.Ratio',
+    #                 'Expanded.Naive.Fold.Mean',
+    #                 'Expanded.Memory.Fold.Mean',
+    #                 'Expanded.Naive.Fold1.Max',
+    #                 'Expanded.Naive.Fold2.Max',
+    #                 'Expanded.Memory.Fold1.Max',
+    #                 'Expanded.Memory.Fold2.Max',
+    #                 'Expanded.Naive.Fold1.Top1',
+    #                 'Expanded.Naive.Fold2.Top1',
+    #                 'Expanded.Memory.Fold1.Top1',
+    #                 'Expanded.Memory.Fold2.Top1',
+    #                 'Expanded.Naive.Fold1.Top2',
+    #                 'Expanded.Naive.Fold2.Top2',
+    #                 'Expanded.Memory.Fold1.Top2',
+    #                 'Expanded.Memory.Fold2.Top2',
+    #                 'Expanded.Naive.Fold1.Top01',
+    #                 'Expanded.Naive.Fold2.Top01',
+    #                 'Expanded.Memory.Fold1.Top01',
+    #                 'Expanded.Memory.Fold2.Top01',
+    #                 'Expanded.Naive.Fold1.Top001',
+    #                 'Expanded.Naive.Fold2.Top001',
+    #                 'Expanded.Memory.Fold1.Top001',
+    #                 'Expanded.Memory.Fold2.Top001'
+    #             ])
+    # summary.to_csv(out_table)
 
 
 if __name__ == '__main__':
-    clonal_expansion(meta_file=args.datapath+'PBMC_PFS_2018Sep.csv',
-                     data_path=args.datapath+'DanaFarberShipp2018May_clean/', 
-                     out_clone=args.workpath+'expanded_clones.csv.gz',
-                     out_table=args.workpath+'expanded_summary.csv')
+    clonal_expansion(meta_file=args.datapath+'_meta_sub.csv',
+                     data_path=args.datapath, 
+                     out_clone=args.workpath+'expanded_clones.csv.gz')
+                     #out_table=args.workpath+'expanded_summary.csv')
 
